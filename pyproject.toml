@@ -1,0 +1,22 @@
+[project]
+name = "es-trend-ob-reference"
+version = "0.1.0"
+description = "Python reference implementation and parity harness for the ES trend + order block Pine Script project"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+
+[tool.setuptools.packages.find]
+include = ["reference*"]

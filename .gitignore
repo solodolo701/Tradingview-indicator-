@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Data — fixtures are committed, raw dumps are not
+reference/fixtures/raw/
+*.parquet
+
+# TradingView MCP local artifacts
+.tv-mcp/
+audit.log
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
