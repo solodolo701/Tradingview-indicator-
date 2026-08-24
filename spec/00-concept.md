@@ -33,13 +33,27 @@ replaces the "HTF ribbon" idea entirely.
 All times below are **America/Chicago** (CME time), and Pine logic must state that timezone
 explicitly rather than relying on the chart default.
 
-⚠️ **Timezone reconciliation needed.** The trader reports the example sweep at "15:30". That
-is 15:30 **local** (CEST) = 13:30 UTC = **08:30 Chicago** — exactly the NY open, which fits
-the stated primary window precisely. Read as Chicago time it would instead be 30 minutes
-after the RTH close, which fits nothing. The CEST reading is almost certainly right, but
-**this must be confirmed before any session rule is coded** — a one-hour error here silently
-shifts every window and would invalidate the entire backtest. Confirm the chart's display
-timezone, and note that CEST/CET shifts relative to US DST twice a year.
+### Timezone — resolved
+
+The trader's charts display **local European time (UTC+2 in summer)**. Confirmed mapping for
+the example sweep:
+
+`15:30 local (UTC+2)` = `13:30 UTC` = `09:30 New York` = **`08:30 Chicago`** = the RTH open.
+
+**Rule for all code: use `"America/Chicago"` explicitly in every `time()` call.** Never a
+fixed UTC offset, and never the trader's local time.
+
+The reason is a real trap rather than a formality. Europe and the US switch DST on different
+dates — the US on the second Sunday of March and first Sunday of November, Europe on the last
+Sundays of March and October. For roughly two weeks each spring and one week each autumn, the
+gap is **5 hours instead of 6**, and the NY open lands at 14:30 on the trader's clock rather
+than 15:30. Any session window hard-coded to a local time or a fixed offset would be silently
+one hour wrong across those weeks, misclassifying every setup in them. Exchange-timezone
+handling makes the problem disappear; nothing else does.
+
+**Consequence for reporting:** conversation and screenshots use local time, the code uses
+Chicago. Every spec and report states which. Where a time appears without a timezone, assume
+Chicago.
 
 | Window | Time | Role |
 |---|---|---|
