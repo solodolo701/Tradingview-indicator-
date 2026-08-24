@@ -32,28 +32,47 @@ From the trader's own description of the working setup (`00-concept.md` §3.1):
 
 > liquidity sweep → internal structure break → retest of the resulting OB → confirmation
 
+### 2.0 There is no close-through break in this system
+
+Confirmed with the trader against their annotated 5m chart. The stage they call the "internal
+structure break" is the **`sfp`** — a Swing Failure Pattern. It is a *sweep-and-reject*, not a
+close beyond a level.
+
+**This is a simplification, not a complication.** Both stages of the sequence run the same
+primitive from `03-liquidity-map` §3 — `penetrated AND closed back on the origin side` — just
+applied at different points and in opposite directions:
+
+| Stage | Mechanic | Direction | Role |
+|---|---|---|---|
+| Impulse sweep | penetrate + reject | *with* the eventual trade | Context; creates the OB |
+| **SFP** | penetrate + reject | ***against*** the trade | **The trigger** |
+
+The trade direction is set by the SFP: **sweep a high → short; sweep a low → long.** In the
+illustration, the (5) low at 7656 ended the impulse down, price corrected upward, and the SFP
+at 7682.75 failed that correction — confirming continuation short.
+
+Only one detection routine is therefore needed, which also means one place for a repainting
+bug rather than two. `02-orderblock-engine`'s break-of-structure test remains a *zone
+qualifier* (§2.3 there) and does not appear in this state machine.
+
 ```
-        ┌──────────────────────────────────────────────┐
-        │                                              │
-        ▼                                              │
-  ┌──────────┐  sweep    ┌─────────┐  BOS     ┌───────────┐
-  │  0 IDLE  │──────────▶│1 SWEPT  │─────────▶│ 2 ARMED   │
-  └──────────┘           └─────────┘          └───────────┘
-        ▲                     │                     │
-        │                     │ timeout             │ price hits 50%
-        │                     ▼                     ▼
-        │                 (reset)            ┌───────────┐
-        │                                    │ 3 TRIGGER │
-        └────────────────────────────────────└───────────┘
-                    fill, invalidate, or timeout
+  ┌──────────┐   SFP against    ┌───────────┐  price hits   ┌───────────┐
+  │  0 IDLE  │──trade direction▶│ 1 ARMED   │─────50%──────▶│2 TRIGGER  │
+  └──────────┘                  └───────────┘               └───────────┘
+        ▲                             │                           │
+        └─────────────────────────────┴───────────────────────────┘
+              timeout · invalidation · window close · daily cap
 ```
 
 | State | Advance condition | Records |
 |---|---|---|
-| **0 · Idle** | `03` reports a sweep of a tracked level | direction, level, bar |
-| **1 · Swept** | `02` reports a BOS *against* the sweep direction within `BOS_MAX_BARS` | the OB created by that break |
-| **2 · Armed** | Price reaches the zone's 50%, refined per `02` §5 | zone, entry, timeframe |
-| **3 · Trigger** | `04` returns a valid size and target | order |
+| **0 · Idle** | `03` reports an SFP at a tracked level or confirmed pivot | direction, level, bar |
+| **1 · Armed** | Price reaches the 50% of the OB associated with the SFP, refined per `02` §5 | zone, entry, timeframe |
+| **2 · Trigger** | `04` returns a valid size and target | order |
+
+The OB associated with an SFP is the candle cluster at the origin of the rejection — resolved
+by `02-orderblock-engine` §3 from the SFP bar, and still required to pass all three qualifiers
+there.
 
 **Reset from any state:** timeout, zone invalidated (close beyond distal edge), an opposing
 sweep, session window closes, or the daily cap is hit.
@@ -64,11 +83,22 @@ second sweep occurs while armed, the existing setup is kept and the new one drop
 count of dropped setups is reported, because a high count would mean the single-machine
 simplification is costing real opportunities.
 
-### 2.1 The sweep precondition is itself a hypothesis
+### 2.1 The prior-impulse-sweep precondition is a hypothesis
 
-Requiring a sweep is the trader's observation, not an established fact. `REQUIRE_SWEEP`
-(default `true`) makes it switchable, and **the baseline is run both ways**. If results are
-equivalent without it, the sweep stage is complexity carrying no weight and should go.
+The SFP is the trigger and is not optional. What *is* optional is whether a **prior liquidity
+sweep must have ended the impulse** before the correction that the SFP then fails.
+
+`REQUIRE_PRIOR_SWEEP` (default `true`) makes that switchable, and the baseline is run both
+ways. If results are equivalent without it, the precondition is complexity carrying no weight
+and should be removed. This is a cheap, high-value comparison because it roughly doubles or
+halves setup count — which is the binding constraint (`00-concept.md` §5).
+
+### 2.2 Not encoded: the wave count
+
+The trader's charts carry (1)–(5) swing labels. Confirmed as **annotation only** — no rule
+depends on the count, and none is added. Recorded here so a later reader does not mistake the
+labels for a specification and try to implement an impulse-count precondition that was never
+part of the method.
 
 ---
 
@@ -171,51 +201,23 @@ first.
 
 1. `BOS_MAX_BARS` — how long after a sweep the structure break may arrive. No default yet;
    measure the distribution on fixtures before choosing.
-2. **"Internal" structure break — provisionally settled.** The break is the **last minor
-   swing before the sweep**, in the direction opposing the sweep. So a sweep of a low is
-   followed by a break of the most recent minor swing *high*.
+2. **Resolved:** the "internal structure break" is the SFP. No close-through test is used
+   anywhere in the state machine (§2.0). What remains open is the **pivot confirmation width
+   used to define the levels the SFP fires against** — `MINOR_PIVOT_LEFT` /
+   `MINOR_PIVOT_RIGHT`, defaulting to 2 against 3 for major structure in
+   `02-orderblock-engine`.
 
-   ```
-   internalBos(sweepDirection):
-       // Minor pivots use a shorter confirmation than major structure
-       ref = sweepDirection == SWEEP_LOW
-               ? most recent confirmed pivotHigh(MINOR_PIVOT_LEFT, MINOR_PIVOT_RIGHT)
-                 occurring at or before the sweep bar
-               : most recent confirmed pivotLow(...)
-       return close crosses beyond ref within BOS_MAX_BARS of the sweep
-   ```
+   ⚠️ **This is where confirmation lag bites hardest.** A pivot with `RIGHT = 2` is only
+   knowable 2 bars after it prints, so an SFP may only be *declarable* some bars after the
+   rejection candle closed. The level must be one confirmed **at or before** the SFP bar,
+   never one that became visible afterwards. Correct and incorrect versions both produce
+   plausible-looking charts, which is exactly why this needs the bar-by-bar regression in
+   test 9 rather than visual inspection.
 
-   `MINOR_PIVOT_LEFT` / `MINOR_PIVOT_RIGHT` default to **2**, against 3 for major structure
-   in `02-orderblock-engine`. The distinction between "internal" and "major" structure is
-   *entirely* this confirmation width, so the two values must never be equal — if they are,
-   the internal break collapses into the BOS qualifier and the sweep stage stops adding
-   information.
-
-   ⚠️ **Confirmation lag bites hardest here.** A minor pivot with `RIGHT = 2` is only
-   knowable 2 bars after it prints, and the reference pivot must be one confirmed *at or
-   before the sweep bar* — never one that only became visible afterwards. This is the most
-   likely place in the whole system for a lookahead bug to hide, because the correct and
-   incorrect versions produce plausible-looking charts. Covered by test 9.
-
-   ⚠️ **Unresolved after seeing the illustration.** The trader's 5m chart marks the yellow
-   dashed line at 7682.75 as **`sfp`** — a Swing Failure Pattern, which is a
-   *sweep-and-reject*, not a close-through break. Two readings are possible and they are not
-   equivalent:
-
-   | Reading | Stage 1 (sweep) | Stage 2 (break) |
-   |---|---|---|
-   | **A** | The SFP at 7682.75 *is* the sweep — buy-side liquidity taken above the swing high | A later close below a minor swing low |
-   | **B** | The (5) low at 7656 is the sweep | The SFP itself serves as the confirmation |
-
-   Reading A fits the trader's stated sequence and their choice of "last minor swing before
-   the sweep". Reading B fits the fact that the yellow line is what they pointed at when
-   asked to illustrate *the break*.
-
-   **The two invert the trigger condition** — close *beyond* a level versus close *back
-   inside* one — so this cannot be guessed. Blocking for `05`; must be answered before the
-   state machine is implemented.
-
-   Independently confirmed by the same chart: the trader labels swing sequences (1)–(5),
-   thinks in impulse/correction terms, and applies SFP logic on 5m as well as 15m.
+   A consequence worth measuring: the confirmation lag means entries are necessarily *late*
+   relative to where the trader would mark the SFP by eye. The size of that lag, in bars and
+   in points, should be reported — if it is large, the mechanical system is trading a
+   materially worse price than the discretionary one, and that gap is the real cost of
+   automation.
 3. Whether an armed setup should survive across the session boundary when the window closes
    mid-setup. Currently it resets.
