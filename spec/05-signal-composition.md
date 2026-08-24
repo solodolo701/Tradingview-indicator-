@@ -171,8 +171,51 @@ first.
 
 1. `BOS_MAX_BARS` — how long after a sweep the structure break may arrive. No default yet;
    measure the distribution on fixtures before choosing.
-2. "Internal" structure break: the trader said *internal*, implying a minor swing rather than
-   a major one. Needs a concrete definition — probably a smaller `PIVOT_LEFT`/`PIVOT_RIGHT`
-   than the one used for major structure, but this should be checked against their charts.
+2. **"Internal" structure break — provisionally settled.** The break is the **last minor
+   swing before the sweep**, in the direction opposing the sweep. So a sweep of a low is
+   followed by a break of the most recent minor swing *high*.
+
+   ```
+   internalBos(sweepDirection):
+       // Minor pivots use a shorter confirmation than major structure
+       ref = sweepDirection == SWEEP_LOW
+               ? most recent confirmed pivotHigh(MINOR_PIVOT_LEFT, MINOR_PIVOT_RIGHT)
+                 occurring at or before the sweep bar
+               : most recent confirmed pivotLow(...)
+       return close crosses beyond ref within BOS_MAX_BARS of the sweep
+   ```
+
+   `MINOR_PIVOT_LEFT` / `MINOR_PIVOT_RIGHT` default to **2**, against 3 for major structure
+   in `02-orderblock-engine`. The distinction between "internal" and "major" structure is
+   *entirely* this confirmation width, so the two values must never be equal — if they are,
+   the internal break collapses into the BOS qualifier and the sweep stage stops adding
+   information.
+
+   ⚠️ **Confirmation lag bites hardest here.** A minor pivot with `RIGHT = 2` is only
+   knowable 2 bars after it prints, and the reference pivot must be one confirmed *at or
+   before the sweep bar* — never one that only became visible afterwards. This is the most
+   likely place in the whole system for a lookahead bug to hide, because the correct and
+   incorrect versions produce plausible-looking charts. Covered by test 9.
+
+   ⚠️ **Unresolved after seeing the illustration.** The trader's 5m chart marks the yellow
+   dashed line at 7682.75 as **`sfp`** — a Swing Failure Pattern, which is a
+   *sweep-and-reject*, not a close-through break. Two readings are possible and they are not
+   equivalent:
+
+   | Reading | Stage 1 (sweep) | Stage 2 (break) |
+   |---|---|---|
+   | **A** | The SFP at 7682.75 *is* the sweep — buy-side liquidity taken above the swing high | A later close below a minor swing low |
+   | **B** | The (5) low at 7656 is the sweep | The SFP itself serves as the confirmation |
+
+   Reading A fits the trader's stated sequence and their choice of "last minor swing before
+   the sweep". Reading B fits the fact that the yellow line is what they pointed at when
+   asked to illustrate *the break*.
+
+   **The two invert the trigger condition** — close *beyond* a level versus close *back
+   inside* one — so this cannot be guessed. Blocking for `05`; must be answered before the
+   state machine is implemented.
+
+   Independently confirmed by the same chart: the trader labels swing sequences (1)–(5),
+   thinks in impulse/correction terms, and applies SFP logic on 5m as well as 15m.
 3. Whether an armed setup should survive across the session boundary when the window closes
    mid-setup. Currently it resets.

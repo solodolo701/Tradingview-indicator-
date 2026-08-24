@@ -80,6 +80,16 @@ move against the subsequent trade. Exceeding it and closing beyond means the lev
 Same penetration, opposite meaning. A rule that conflates them will produce a system that
 enters against genuine breakouts.
 
+**Terminology alignment — this is the trader's "SFP".** The trader marks these on the chart
+as `sfp` (Swing Failure Pattern): price takes out a prior swing's liquidity and fails to hold
+beyond it. That is exactly the `penetrated and rejected` condition above, so the spec and the
+trader's vocabulary already agree. Use "sweep / SFP" interchangeably in code comments and
+reports so the mapping stays obvious to them.
+
+The trader applies it on **5m** as well as 15m, against swing points rather than only against
+session levels — so `trackedLevels` must include confirmed pivots from both timeframes, not
+just the §2 session set.
+
 `SWEEP_MIN_TICKS` (default 2) filters noise that merely grazes a level.
 `SWEEP_MAX_BARS` (default 3) bounds how long the reclaim may take.
 
