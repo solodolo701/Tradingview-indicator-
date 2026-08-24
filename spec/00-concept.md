@@ -146,6 +146,78 @@ it needs price to travel 7.5 stop-widths in favour without one stop-width agains
 proportionally, and win rate collapses faster below ~1.5× ATR than the requirement falls.
 The optimum is **1–2 MES**, which is where the real cost appears: **45–90 net points/day**.
 
+### Live worked example — the actual defect
+
+Reconstructed exactly from the fifth screenshot, where the price axis is legible.
+
+Short 5 MES, +$87.50 unrealised = **3.5 points onside** at 7677.25. So:
+
+| | Price | Distance from entry |
+|---|---|---|
+| OB zone high | 7684.00 | +3.25 |
+| **Entry (50% of OB)** | **7680.75** | — |
+| OB zone low | 7677.50 | −3.25 |
+| **Stop** | **7684.00** | **+3.25 pt = $81 on 5 MES** |
+| Target (buy limit) | 7651.00 | −29.75 pt = $744 on 5 MES |
+
+The zone is **7677.50 – 7684.00**, 6.5 points wide, and 7680.75 is its exact midpoint —
+confirming the 50% entry rule. And that exposes the real defect:
+
+> **The stop is placed exactly at the order block's distal edge.**
+
+The top of the zone is the single most likely price in the entire chart to be traded through.
+A wick into the zone extreme is not an anomaly — it is the *normal* behaviour of price
+testing a level, and it happens on most zones that ultimately hold. Placing the stop there
+converts the most probable event into a loss. This is a structural error, not a sizing
+preference, and it explains the trader's own forecast that the trade will be stopped despite
+being onside.
+
+**It is also not really a "5 contracts is too many" problem.** The causation runs the other
+way: the stop was placed at an arbitrary dollar amount, the zone width was never consulted,
+and the size followed from that. Fix the stop placement and the size falls out correctly.
+
+### The corrected geometry
+
+Stop beyond the zone's distal edge plus a buffer — say 7687.00, three points clear of the
+zone high — then derive size from that distance at the same $100 risk:
+
+| | Value |
+|---|---|
+| Stop distance | 7687.00 − 7680.75 = **6.25 pt** |
+| Size | `floor(100 / (6.25 × 5))` = **3 MES** |
+| Risk | 6.25 × 3 × $5 = **$93.75** |
+| Reward at 7651.00 | 29.75 × 3 × $5 = **$446.25** |
+| R:R | **4.76 : 1** |
+
+**One correctly structured trade is worth $446 — essentially the entire daily target.** The
+trade idea, the zone, and the target were all fine. Only the stop placement was wrong, and it
+was wrong in the way that guarantees the maximum possible stop-out rate.
+
+### What this revises
+
+Break-even win rate at 4.76:1 is `1 / (1 + 4.76) ≈ 17.4%`. Anything above that is profitable,
+which is a far more forgiving bar than the earlier analysis implied. **Per-trade expectancy is
+not the problem.**
+
+The remaining constraint is **frequency**. At a realistic 30–35% hit rate on a 30-point
+target, expectancy is roughly 0.7–1.0R per trade. Reaching 4.5R/day then needs 4–5 trades,
+and the NY first hour yields 1–2. So:
+
+- **Per-trade geometry: solved.** Stop beyond the zone, size derived from it.
+- **Daily target: still short.** ~1–2R/day ≈ $150–250 from one window.
+
+The gap closes through frequency or through exit management, not through tighter stops. Two
+candidates for Phase 2: adding the 13:00–15:00 window, and **scaling out** — partial at
+1.5–2R where hit rates are high, runner to the full target. Scaling raises the effective win
+rate and smooths the daily distribution, which matters a great deal when a −$200 cap can end
+the day.
+
+**Consequence for the build:** the risk engine (`spec/04-risk-engine.md`) is the **first**
+module to spec and implement, ahead of the OB engine. Any backtest of entry logic with the
+stop inside the zone will show it failing regardless of merit, because the stop rather than
+the rule determines the outcome. Stop placement must be a *derived* property of the zone
+geometry, and position size a derived property of the stop — never inputs set by hand.
+
 **R is invariant.** Required daily performance is `$450 ÷ $100 = 4.5R/day` regardless of
 contract count. Sizing only decides whether the stop survives. The only levers are trades
 per day, win rate, and R per winner.
@@ -214,7 +286,14 @@ Standing observations:
 3. OB invalidation: first touch, close through, or full sweep? Do zones expire after N bars?
 4. Stop placement: beyond the distal edge of the zone, beyond the wick, or a fixed ATR
    multiple?
-5. Target: fixed R multiple, the next LVN, the opposing OB, or a session level?
+5. **Target placement relative to structure.** In the live example the buy limit sits at
+   7651.00 while the recent swing low is 7657.75 — the target is **6.75 points beyond the
+   low**, so the trade requires that low to break rather than merely to be retested. That is
+   defensible as a liquidity-sweep target (resting stops sit below an obvious low, and price
+   often spikes through), but it is a materially different bet from taking profit just above
+   the low. Both need testing: target *before* the level vs. *beyond* it. Candidates for the
+   rule: fixed R multiple, the next LVN, the opposing OB, a session level, or a fixed offset
+   past the prior swing.
 6. Is the afternoon window (13:00–15:00) worth including, or strictly the first hour?
 7. Maximum retracement depth before a continuation setup is abandoned — or is there none?
 8. Which MA ribbon and settings are on the chart? Still useful as a 15m timing filter even
