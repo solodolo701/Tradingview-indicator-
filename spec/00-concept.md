@@ -52,16 +52,61 @@ opposite side.
 **B — London continuation.** Where no reversal occurs, bias follows the London session's
 net direction, and OBs are taken on that side only.
 
-These are two distinct setups with different logic and they should be **specced, coded, and
-backtested separately** before any attempt to run them together. Setup A is conditional on a
-sweep; Setup B is conditional on the absence of one. Conflating them hides which one carries
-the edge.
+These are two distinct setups with different logic. What distinguishes an A day from a B day
+*at 08:35*, forward-looking rather than in hindsight, is the hardest rule in the project.
 
-**Open question:** what distinguishes an A day from a B day *at 08:35*, in advance rather
-than in hindsight? This is the single hardest rule in the project and Phase 2 has to answer
-it with something testable — a sweep of the pre-open high/low by more than X ticks followed
-by a reclaim within N bars, or similar. Without a forward-looking trigger, Setup A is
-unbacktestable.
+**It is deliberately not being answered yet.** See §2.1.
+
+### 2.1 The bias rule is deferred — measure first, filter second
+
+Writing a directional rule now would mean guessing one and then discovering whether the guess
+was any good. Instead, the **baseline system is direction-agnostic**: inside the session
+window, take *every* qualifying OB setup, long and short, with no bias filter at all.
+
+Every trade is then tagged with a set of **pre-registered attributes**, and Phase 5 slices
+results by those attributes to see which ones actually separate winners from losers. The data
+proposes the bias rule; it is not assumed.
+
+This is better than guessing for three reasons:
+
+1. **It establishes a baseline.** Does the OB + 50%-entry concept have an edge at all,
+   before any directional overlay? If it does not, no bias filter is going to rescue it, and
+   that is worth knowing in week one rather than month three.
+2. **It measures the filter's contribution.** The value of a bias rule is
+   `filtered result − baseline result`. Without a baseline that number cannot be computed.
+3. **It tests whether the edge is mechanisable at all.** If direction-agnostic trading is
+   break-even and only the discretionary subset works, the edge lives in the trader's
+   judgement rather than in the rules — which means an automated version will not reproduce
+   it. Better to learn that from a backtest than after the whole system is built.
+
+**Nothing else is deferred.** The baseline still needs complete, exact rules for: OB
+qualification, session windows, stop placement, target placement, and sizing. Only the
+directional filter waits.
+
+### 2.2 Pre-registered attributes
+
+**These are fixed before any results are seen.** Attributes are chosen now, in advance,
+precisely so that Phase 5 cannot go fishing through arbitrary slices until something looks
+good. That is how curve-fitting gets laundered into a "discovery", and `CLAUDE.md` forbids it.
+
+| Group | Attributes |
+|---|---|
+| **Time** | Session at entry (Asia / London / NY first hour / midday / afternoon); minutes since NY open |
+| **Pre-open** | Push direction (sign of net change 06:00–08:30 CT); push magnitude in ATR; whether the pre-open high/low was swept after 08:30 and by how many ticks; whether that sweep was reclaimed within N bars |
+| **London** | Net session direction; session range in ATR |
+| **Alignment** | Trade agrees with London direction (bool); trade opposes the pre-open push (bool) |
+| **Zone** | Width in ATR; bars since formation; retracement depth into the impulse at entry (%); impulse leg size in ATR |
+| **Volume profile** | Distance from POC in ticks; HVN between entry and target (bool); LVN between entry and target (bool) |
+| **Context** | RVOL at entry; ATR regime bucket; day of week |
+
+Discipline for Phase 5, non-negotiable:
+
+- Only these attributes are tested. Adding one later requires saying so in the report.
+- Any filter that looks promising in-sample must **hold out-of-sample** before it is adopted.
+- A filter needs a *mechanism*, not just a number. "Tuesdays are good" is noise until there
+  is a reason.
+- The report states how many attributes were examined, so the reader can discount for
+  multiple comparisons.
 
 ---
 
@@ -279,11 +324,19 @@ Standing observations:
 
 ## 8. Open questions
 
-1. **What distinguishes an open-reversal day from a London-continuation day at 08:35?**
-   The hardest and most important rule. Needs a forward-looking, testable trigger.
-2. How much of a pre-open push counts — a minimum range, or a sweep of a specific level
-   (pre-open high/low, ONH/ONL, prior day high/low)?
-3. OB invalidation: first touch, close through, or full sweep? Do zones expire after N bars?
+Deliberately deferred to Phase 5 (see §2.1) — **not blocking**:
+
+- What distinguishes an open-reversal day from a London-continuation day at 08:35. Recorded
+  as attributes now, resolved from data later.
+- How much of a pre-open push counts, and against which level.
+
+Blocking for Phase 2 — the baseline cannot be specced without these:
+
+1. **OB qualification.** Not every candle cluster before a move is a tradeable zone. What
+   makes the impulse leaving it "impulsive" — a minimum size in ATR, a displacement candle,
+   an unfilled imbalance? This is the rule that decides how many setups per day exist, so it
+   drives everything downstream.
+2. OB invalidation: first touch, close through, or full sweep? Do zones expire after N bars?
 4. Stop placement: beyond the distal edge of the zone, beyond the wick, or a fixed ATR
    multiple?
 5. **Target placement relative to structure.** In the live example the buy limit sits at
