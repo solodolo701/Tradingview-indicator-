@@ -44,9 +44,10 @@ module owns that derivation and is the precondition for evaluating anything else
 | `MIN_STOP_TICKS` | 8 | 4–40 | Floor. Prevents an absurd stop from a degenerate zone. |
 | `MAX_STOP_ATR` | 3.0 | 1.0–6.0 | Zones needing a wider stop are skipped, not shrunk. |
 | `MAX_CONTRACTS` | 10 | 1–50 | Hard ceiling regardless of maths |
-| `DAILY_RESET` | `exchangeDay` | `exchangeDay` \| `rthOpen` | See §5 |
-| `TARGET_MODE` | `rMultiple` | see §6 | Open question — testable variants |
-| `TARGET_R` | 3.0 | 1.0–10.0 | When `TARGET_MODE = rMultiple` |
+| `DAILY_RESET` | `exchangeDay` | fixed | **Settled.** CME 17:00 CT boundary. |
+| `TARGET_MODE` | `opposingOb` | see §6 | **Settled default.** Variants still compared. |
+| `TARGET_R` | 3.0 | 1.0–10.0 | Only when `TARGET_MODE = rMultiple` |
+| `MIN_TARGET_R` | 1.5 | 0.5–5.0 | Skip if the target yields less than this. See §6.1. |
 | `SCALE_OUT` | `false` | bool | See §6.2 |
 | `SCALE_OUT_R` | 1.5 | 0.5–5.0 | Partial exit level |
 | `SCALE_OUT_PCT` | 50 | 10–90 | Percent of position closed at the partial |
@@ -182,6 +183,26 @@ than merely be tested. `priorSwing` with a positive offset models that (a sweep 
 with a negative offset it takes profit before the level. **They are materially different
 bets and both need measuring.**
 
+**`opposingOb` is the settled default, and it carries a consequence:** the target distance
+is *variable*, set by structure rather than by a chosen multiple. Some setups will present an
+opposing block close enough that the reward does not justify the risk. Hence `MIN_TARGET_R`:
+
+```
+targetR = abs(target - entry) / abs(entry - stop)
+if targetR < MIN_TARGET_R
+    return SKIP
+```
+
+Two things follow. First, **skipping on poor R:R is a second legitimate reason to pass on a
+setup**, alongside a zone too wide to size (§4) — both are cases where the correct action is
+no trade. Second, because R now varies per trade, the "4.5R/day" framing from
+`00-concept.md` §5 becomes an average rather than a per-trade constant, and reports must give
+the **distribution of realised R**, not just its mean.
+
+Where no opposing block exists within a reasonable distance, fall back to `rMultiple` at
+`TARGET_R`. The fallback rate is itself worth reporting — if it fires on most trades, the
+default is not really `opposingOb`.
+
 ### 6.2 Scale-out — optional mode
 
 `00-concept.md` §5 identified frequency, not per-trade expectancy, as the constraint on the
@@ -242,12 +263,26 @@ Each becomes a pytest case in `tests/test_risk_engine.py`:
 
 ---
 
-## 9. Open items for sign-off
+## 9. Sign-off status
 
-1. `DAILY_RESET`: exchange day or RTH open? (§5)
-2. `TARGET_MODE` default — `rMultiple` at 3.0 is a placeholder pending the §6.1 comparison.
-3. `ATR_BUFFER_MULT` at 0.5 is an estimate. It should be calibrated against how far price
-   typically wicks past a zone that goes on to hold — measurable from the fixture data, and
-   worth doing before the first backtest rather than tuning after.
-4. Confirm `RISK_PER_TRADE = 100` (i.e. two full-size losers before lockout) rather than a
-   smaller unit permitting three or four attempts per day.
+**Settled:**
+
+- `RISK_PER_TRADE = 100` — two full-size losers before lockout
+- `DAILY_RESET = exchangeDay` — CME 17:00 CT boundary
+- `TARGET_MODE = opposingOb` as the default, with `MIN_TARGET_R` guarding thin setups
+
+**Consequence of $100/two attempts, recorded so it is not a surprise later.** With only two
+attempts before lockout, a losing first trade removes half the day's capacity and shrinks the
+second trade's size to whatever the remaining budget allows. Two early losses end the day
+regardless of what the market does afterwards. That is a deliberate choice of larger size per
+trade over more attempts, and it makes **sequence risk** a first-order concern rather than a
+footnote: the *order* in which winners and losers arrive now materially affects monthly
+results. Phase 5 must report the distribution of days ended by the cap, not merely the count.
+
+**Remaining calibration (not blocking implementation):**
+
+`ATR_BUFFER_MULT = 0.5` is an estimate. It should be calibrated empirically against how far
+price typically wicks past a zone that goes on to hold — measurable directly from the fixture
+data. Doing that measurement *before* the first backtest is legitimate calibration against
+zone behaviour; adjusting it afterwards to improve P&L is curve-fitting. The distinction
+matters and the report must state which was done.
