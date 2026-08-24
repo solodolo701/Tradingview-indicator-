@@ -30,7 +30,16 @@ The trader's bias is **session-structural, not indicator-based**. This is a bett
 than an HTF moving average and it is cleanly mechanisable in Pine via `time()` windows. It
 replaces the "HTF ribbon" idea entirely.
 
-All times America/Chicago (CME time).
+All times below are **America/Chicago** (CME time), and Pine logic must state that timezone
+explicitly rather than relying on the chart default.
+
+⚠️ **Timezone reconciliation needed.** The trader reports the example sweep at "15:30". That
+is 15:30 **local** (CEST) = 13:30 UTC = **08:30 Chicago** — exactly the NY open, which fits
+the stated primary window precisely. Read as Chicago time it would instead be 30 minutes
+after the RTH close, which fits nothing. The CEST reading is almost certainly right, but
+**this must be confirmed before any session rule is coded** — a one-hour error here silently
+shifts every window and would invalidate the entire backtest. Confirm the chart's display
+timezone, and note that CEST/CET shifts relative to US DST twice a year.
 
 | Window | Time | Role |
 |---|---|---|
@@ -115,19 +124,92 @@ Discipline for Phase 5, non-negotiable:
 - **Zone:** the candle cluster at the origin of the impulsive leg
 - **Bounds:** candle **high to low**, wicks included
 - **Entry:** **50% level** = `(zoneHigh + zoneLow) / 2`
-- **Setup shape:** price leaves the zone impulsively, later retraces back into it, continuation expected
+- **Qualification — all three required:**
+  1. A **displacement candle** in the leg out of the zone (body above an ATR threshold)
+  2. An **unfilled imbalance / FVG** left behind by the impulse
+  3. A **break of structure** after the move — a prior swing point taken out
+- **Invalidation:** a **close** beyond the distal edge. Wicks through the zone do not kill it.
+- **Stop:** beyond the distal edge **plus an ATR buffer**, so the buffer scales with volatility
+
+Requiring all three qualifiers is strict and will substantially reduce setup count. That is
+the intended trade-off, but it interacts directly with the frequency constraint in §5 —
+**how many setups per day survive all three filters is the number the whole daily target
+depends on**, and it is the first thing Phase 5 should measure, before any P&L.
 
 Wick-to-wick bounds make the zone wider than a body-based definition, so the 50% sits deeper
-and fills more often — at the cost of a worse average price and a wider stop. That trade-off
-is now fixed by the trader's choice and should not be silently re-litigated in code.
+and fills more often — at the cost of a worse average price and a wider stop. Fixed by the
+trader's choice; not to be silently re-litigated in code.
 
 **The backtest must count missed fills.** A 50% entry rule generates setups where price
 reacts off the proximal edge and never reaches the midpoint. Counting only filled trades
-inflates the apparent win rate of the rule. Phase 5 runs 50%-entry against proximal-edge
-entry on identical zones as a controlled comparison.
+inflates the apparent win rate. Phase 5 runs 50%-entry against proximal-edge entry on
+identical zones as a controlled comparison.
 
-**Still open:** invalidation (first touch / close through / full sweep), whether zones expire
-after N bars, and where the stop sits relative to the zone.
+### 3.1 The entry sequence — a state machine
+
+The trader's description of the working setup is a *sequence*, not a single condition, and it
+is considerably more specific than "retest an order block":
+
+> Liquidity sweep at the NY open → internal structure break → retest of the resulting OB,
+> with 15m and 5m zones aligned → confirmation from RVOL / RSI.
+
+That is directly implementable as a state machine, which is also how it should be coded:
+
+| State | Condition to advance | Records |
+|---|---|---|
+| **0 · Idle** | Track liquidity levels: swing highs/lows, equal highs/lows, session extremes | Level register |
+| **1 · Swept** | Price trades through a marked level and closes back on the origin side | Sweep direction, level, bar |
+| **2 · Structure broken** | Within N bars, internal structure breaks *against* the sweep direction | The OB that produced the break |
+| **3 · Armed** | Zone recorded, awaiting retest | Zone bounds, 50% level |
+| **4 · Entry** | Price retraces to the 50% level, and the confirmation filter passes | Fill |
+
+Reset conditions: timeout after N bars in any state, close beyond the zone's distal edge, or
+an opposing sweep.
+
+The sweep is what makes this different from a plain OB retest — it means the zone was created
+*after* liquidity was taken, so the stops that would have fuelled a move against the trade
+have already been cleared. Whether that actually improves outcomes is measurable: **run the
+baseline with and without the sweep precondition** and compare.
+
+Confirmation filter (RVOL, RSI) is a **candidate, not a rule**. Note that RVOL was 0.6 on the
+example setup — below average. If a filter of `RVOL > 1.0` were imposed, this setup would be
+rejected. That tension has to be resolved by data, so RVOL and RSI go in as tagged attributes
+(§2.2) and are only promoted to filters if the slices justify it.
+
+### 3.2 Multi-timeframe nesting — and the timeframe-consistency rule
+
+The trader refines a 15m zone by finding a 5m zone nested inside it, and enters on the
+smaller one. This is the piece that reconciles the sizing problem, and it deserves to be
+stated as a hard rule:
+
+> **The stop must clear the zone that generated the entry — on the same timeframe as that
+> zone.** Entering from a 15m zone and stopping at 5m-zone width is the specific error.
+
+Worked, using the live example. Same $100 risk, same 7651.00 target:
+
+| | Entry from 15m zone | Entry from nested 5m zone |
+|---|---|---|
+| Zone width | 6.5 pt (7677.50–7684.00) | ~3 pt |
+| Entry (50%) | 7680.75 | ~7682.50 |
+| Stop | 7687.00 (zone + buffer) | ~7686.50 (zone + 5m ATR buffer) |
+| Stop distance | 6.25 pt | ~4.0 pt |
+| **Size at $100 risk** | **3 MES** | **5 MES** |
+| Reward at target | $446 | ~$787 |
+
+**Both are coherent. The failing trade was neither** — it took the 15m entry with a
+5m-width stop, which clears no zone at all. So the original instinct (tight stop, larger
+size) was not wrong; it was executed by shrinking the *stop* rather than by refining the
+*zone*. Refining the zone is the legitimate route to the same place.
+
+The 5m route is not free: a narrower zone means a lower probability the zone holds, so win
+rate falls as size rises. Which side of that trade-off wins is empirical. **Entry timeframe
+becomes a backtest variant** — 15m zone vs 5m-refined zone, run on identical setups.
+
+Pine note: the 5m refinement needs `request.security` on the lower timeframe with
+`lookahead=barmerge.lookahead_off`, or `request.security_lower_tf()`. Reading a lower
+timeframe from a 15m chart is legitimate and non-repainting when done correctly; getting it
+wrong is the most common source of fake backtest results in published scripts. This gets
+explicit parity testing against the Python reference.
 
 ---
 
@@ -217,9 +299,12 @@ converts the most probable event into a loss. This is a structural error, not a 
 preference, and it explains the trader's own forecast that the trade will be stopped despite
 being onside.
 
-**It is also not really a "5 contracts is too many" problem.** The causation runs the other
-way: the stop was placed at an arbitrary dollar amount, the zone width was never consulted,
-and the size followed from that. Fix the stop placement and the size falls out correctly.
+**It is also not really a "5 contracts is too many" problem** — see §3.2. Five contracts is
+perfectly defensible when the entry comes from a *5m* zone whose width justifies a 4-point
+stop. The actual error is a **timeframe mismatch**: a 15m entry paired with a 5m-width stop,
+which clears no zone at all. The stop was set to a dollar amount, the zone width was never
+consulted, and size followed from that. Fix the stop-to-zone relationship and size falls out
+correctly at either timeframe.
 
 ### The corrected geometry
 
