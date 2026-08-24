@@ -72,14 +72,26 @@ These are the levels the liquidity-proxy map should track:
 
 Rough ES daily ranges (verify against current data before relying on these):
 
-| Regime | Daily range | 5m ATR |
-|---|---|---|
-| Low vol | 20–35 pts | 2–4 pts |
-| Normal | 35–60 pts | 4–7 pts |
-| High vol | 60–120+ pts | 8–20 pts |
+| Regime | Daily range | 5m ATR | 15m ATR |
+|---|---|---|---|
+| Low vol | 20–35 pts | 2–4 pts | 3.5–7 pts |
+| Normal | 35–60 pts | 4–7 pts | 7–12 pts |
+| High vol | 60–120+ pts | 8–20 pts | 14–35 pts |
 
-A stop tighter than roughly 1.5× the 5m ATR will be taken out by noise regardless of whether
-the directional idea was right.
+**15m is this project's primary timeframe.** Verify these against live data before relying
+on them — they are order-of-magnitude references, not measurements.
+
+A stop tighter than roughly 1.5× the ATR of the trading timeframe will be taken out by noise
+regardless of whether the directional idea was right. Below 1.0× ATR the outcome is
+determined by tick sequencing rather than by direction.
+
+### Worked example of the failure mode
+
+A bracket of 5 MES with a $100 stop is a **4-point stop** — 0.4× a normal-vol 15m ATR, and
+under half the range of a single bar during an impulsive move. Paired with a $750 target
+(30 points), it demands price travel 7.5 stop-widths in favour without one stop-width
+against. On 15m that path is close to unfillable. **The size is what breaks it, not the
+signal.** See `spec/00-concept.md` §2 for the full arithmetic.
 
 ---
 
