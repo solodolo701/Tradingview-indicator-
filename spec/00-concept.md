@@ -75,6 +75,14 @@ opposite side.
 **B — London continuation.** Where no reversal occurs, bias follows the London session's
 net direction, and OBs are taken on that side only.
 
+**Chart corroboration.** On the trader's 15m chart of 24–25 Aug 2026, the two largest
+directional moves in the window both begin around **15:00–15:30 local = 08:00–08:30
+Chicago** — the pre-open into the RTH open. This is a *timing* observation read off the time
+axis, so it is reliable in a way that eyeballing candle bodies is not, and it independently
+supports concentrating the entry window there. It remains two instances on one chart; the
+measurement that matters is the distribution of setup times and outcomes across the whole
+fixture window, which `05` §6 step 1 produces before any P&L.
+
 These are two distinct setups with different logic. What distinguishes an A day from a B day
 *at 08:35*, forward-looking rather than in hindsight, is the hardest rule in the project.
 

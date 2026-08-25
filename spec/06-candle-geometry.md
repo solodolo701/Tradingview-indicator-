@@ -93,6 +93,53 @@ and the fraction of those bars closing in the leg's direction.
 
 ---
 
+## 3.1 Sequence features — multi-bar geometry
+
+Single-bar metrics miss things the eye picks up across several bars. Two candidates, both
+from the trader's annotated 15m chart of 24–25 Aug 2026.
+
+### Compression before expansion
+
+Observed at the OB / value-area-low confluence before the drop: several small-bodied candles
+sitting on the level, followed by large-bodied candles with small wicks. Contraction, then
+displacement.
+
+```
+compressionRatio = mean(rangeAtr) over the CONTRACTION_LOOKBACK bars
+                     immediately preceding the displacement bar
+```
+
+A low value means the market went quiet at the level before breaking. If this discriminates,
+it is a genuinely useful pre-filter, because it is knowable *before* the displacement rather
+than after.
+
+Two cautions. This is one observation on one chart — the eye finds compression-then-expansion
+readily in hindsight because expansion is what makes a move visible at all, and quiet periods
+that go nowhere are not memorable. And `CONTRACTION_LOOKBACK` is another free parameter, so
+it needs a pre-registered default (**4 bars**) rather than a search.
+
+### OB chain index
+
+The trader notes that after the initial spike, **two further OBs formed and both were good
+entries**. That is a claim about *sequence*, not about any single zone:
+
+```
+obChainIndex = position of this zone in an unbroken run of same-direction zones,
+               reset when an opposing SFP fires or the daily session rolls
+```
+
+So the first OB after a regime change is index 1, the next same-direction one is 2, and so
+on. If later links in a chain outperform, the reason would be that the first zone establishes
+direction while subsequent ones trade with an already-confirmed trend — plausible, and cheap
+to test since it is a single integer per trade.
+
+It is also the kind of claim most vulnerable to hindsight: chains are only visible once they
+have completed, and a chain that broke at index 2 does not look like a chain at all. Tagging
+`obChainIndex` on **every** zone including losers — which §4 of `05` already requires for
+rejected setups — is what makes the test honest.
+
+---
+
 ## 4. Attributes added to the tagging set
 
 Appended to `00-concept.md` §2.2, recorded on the **SFP bar** and on the **entry bar**:
@@ -102,7 +149,9 @@ sfp_bodyRatio, sfp_closePosition, sfp_upperWickRatio, sfp_lowerWickRatio,
 sfp_bodyAtr, sfp_rangeAtr, sfp_sweepQuality,
 entry_bodyRatio, entry_closePosition, entry_bodyAtr,
 impulse_bodyAtrSum, impulse_directionalBarPct,
-ob_avgBodyRatio            // across the zone's candles
+ob_avgBodyRatio,           // across the zone's candles
+compressionRatio,          // §3.1
+obChainIndex               // §3.1
 ```
 
 These are **pre-registered now**, before any results are seen, under the same discipline as
