@@ -136,8 +136,20 @@ valueArea = bins around POC accumulating VALUE_AREA_PCT of total volume (default
 | Node | Role | Effect |
 |---|---|---|
 | **POC** | Confluence | POC within `POC_CONFLUENCE_TICKS` of an OB → strongest zone |
+| **VAL / VAH** | Confluence | Value area edge within `POC_CONFLUENCE_TICKS` of an OB → confluence |
 | **HVN** | Barrier | An HVN between entry and target → **downgrade or veto** |
 | **LVN** | Path / target | An LVN between entry and target → price travels fast; also a `nextLvn` target |
+
+**Value area edges are confluence levels in their own right**, not merely a byproduct of the
+value-area calculation. The trader identifies OB-plus-**value-area-low** overlap as a setup
+that works, distinct from OB-plus-POC. That is mechanically sensible: VAL and VAH are the
+boundaries between accepted and rejected price, so they mark where the market has previously
+decided a level was too cheap or too dear — a different statement from POC, which marks where
+it transacted most.
+
+Tag `valDistanceTicks` and `vahDistanceTicks` alongside `pocDistanceTicks` so Phase 5 can
+determine whether POC-confluence and value-edge-confluence carry different weight. They may
+well not — but assuming they are the same thing would hide it either way.
 
 The HVN rule comes from a specific observed case (`00-concept.md` §4): price cleared an OB's
 50%, which read as continuation, but an HVN built during the prior downtrend capped the
