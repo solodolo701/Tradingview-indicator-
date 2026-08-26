@@ -429,6 +429,43 @@ Standing observations:
 
 ---
 
+## 7.1 The evidence base — and its selection bias
+
+Everything in this document derives from **seven annotated charts and a Q&A with the trader**.
+That is unusually good primary evidence for a spec: it captures how the method is actually
+traded rather than how a book describes it. But its limits must be recorded, because a later
+reader will otherwise mistake it for validation.
+
+**Of the setups shared, all but one were examples of the strategy working.** This is the
+natural thing to send when explaining a method, and it is not a criticism. It does have a
+concrete consequence:
+
+> A specification built from winners encodes entry criteria well and **rejection criteria
+> barely at all.**
+
+Every qualifier here — the displacement threshold, the three-way OB test, HVN opposition,
+`MIN_TARGET_R` — was derived by asking "what did the good setups have?" rather than "what
+separated them from the bad ones?" Those are different questions, and only the second one
+produces a filter. A rule present in every winner is worthless if it is also present in every
+loser, and nothing in the current evidence base can distinguish those two cases.
+
+**This is precisely what the direction-agnostic baseline (§2.1) exists to correct.** Taking
+every qualifying setup and tagging all of them — winners, losers, and rejected candidates
+alike — is the only way to measure which conditions actually discriminate. Until that runs,
+every threshold in these specs should be read as **a hypothesis with a measurement attached,
+not a validated rule.**
+
+Two specific claims are most exposed to hindsight and are flagged at their definitions:
+compression-before-expansion (`06` §3.1) and the OB chain (`06` §3.1). Both are patterns the
+eye finds readily in completed charts and rarely in real time.
+
+**Additional worked examples have reached diminishing returns.** Chart eight would confirm the
+qualitative picture again without changing any parameter, because the questions that remain
+are all quantitative: how often does this fire, and how do winners differ from losers? Those
+need a few hundred instances, not a few more screenshots. The fixtures are the gate.
+
+---
+
 ## 8. Open questions
 
 Deliberately deferred to Phase 5 (see §2.1) — **not blocking**:
