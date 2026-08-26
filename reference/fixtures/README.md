@@ -8,7 +8,41 @@ Nothing downstream can be tested without these. This is the gate on Phase 3.
 
 ---
 
-## Prerequisites
+## Route A — Yahoo Finance (no subscription, start here)
+
+TradingView's chart-data export requires a paid plan. The free tier also limits history and
+futures data, which makes the MCP route weak until a plan is in place. Yahoo is free and
+sufficient for the question that currently blocks everything — **how often does the setup
+fire?**
+
+```bash
+pip install yfinance pandas
+python reference/fetch_fixtures.py
+```
+
+Writes all files below plus `manifest.md`, and validates as it goes.
+
+**What this data is and is not.** Sub-hourly history caps at ~60 days (7 for 1m); `ES=F` is a
+continuous front-month series so rolls show as gaps; and volume is less reliable than exchange
+data, which makes everything volume-derived — profile, POC/HVN/LVN, RVOL — provisional.
+
+That is fine for measuring setup frequency, validating the state machine, and confirming the
+Python reference. It is **not a source for quoting P&L.** Before any number is reported as a
+result, re-run on exchange-quality data (Databento, the Tradovate API, or a TradingView
+export). This constraint is repeated in the generated manifest so it cannot be lost.
+
+**ES vs MES:** the price series is identical — only the multiplier differs ($50 vs $5).
+`ES=F` has the better feed, so structure is measured on ES and MES point value is applied in
+the risk maths (`spec/04-risk-engine.md`).
+
+---
+
+## Route B — TradingView MCP
+
+Better data and the only route that can compile Pine, but it needs a paid TradingView plan.
+Worth setting up when there is Pine to compile; not needed to start.
+
+### Prerequisites
 
 Run these steps in a **local Claude Code session on your own machine**. The MCP drives
 TradingView Desktop over CDP on `127.0.0.1:9222`; a cloud session cannot reach it, and the
